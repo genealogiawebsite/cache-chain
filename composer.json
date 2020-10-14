@@ -1,24 +1,24 @@
 {
-    "name": "laravel-enso/cache-chain",
+    "name": "genealogiawebsite/cache-chain",
     "description": "Cache chain for Laravel Enso",
     "keywords": [
-        "laravel-enso",
+        "genealogiawebsite",
         "cache-chain",
         "laravel-cache",
         "cache"
     ],
-    "homepage": "https://github.com/laravel-enso/cache-chain",
+    "homepage": "https://github.com/genealogiawebsite/cache-chain",
     "type": "library",
     "license": "MIT",
     "authors": [{
         "name": "Adrian Ocneanu",
         "email": "aocneanu@gmail.com",
-        "homepage": "https://laravel-enso.com",
+        "homepage": "https://genealogiawebsite.com",
         "role": "Developer"
     }, {
         "name": "Reza Fouladi",
         "email": "raftx24@gmail.com",
-        "homepage": "https://laravel-enso.com",
+        "homepage": "https://genealogiawebsite.com",
         "role": "Developer"
     }],
     "require": {
