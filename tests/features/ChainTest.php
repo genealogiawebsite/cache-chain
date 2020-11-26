@@ -5,6 +5,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Tests\TestCase;
+use LaravelEnso\CacheChain\Exceptions\Chain as Exception;
 
 class ChainTest extends TestCase
 {
@@ -12,9 +13,9 @@ class ChainTest extends TestCase
     public function should_cache_on_all_configured_adapters()
     {
         $adapters = ['array', 'file'];
-        $this->setAdapters($adapters);
+        Cache::store('chain')->adapters($adapters);
 
-        Cache::store('chain')->put('foo', 'bar');
+        $this->assertTrue(Cache::store('chain')->put('foo', 'bar'));
 
         Collection::wrap($adapters)->each(fn ($adapter) => $this
             ->assertEquals('bar', Cache::store($adapter)->get('foo')));
@@ -23,9 +24,9 @@ class ChainTest extends TestCase
     /** @test */
     public function should_get_from_first_layer_when_available()
     {
-        $this->setAdapters(['array', Mockery::mock(Store::class)]);
+        Cache::store('chain')->adapters(['array', Mockery::mock(Store::class)]);
 
-        Cache::store('array')->put('foo', 'bar');
+        $this->assertTrue(Cache::store('array')->put('foo', 'bar'));
 
         $this->assertEquals('bar', Cache::store('chain')->get('foo'));
     }
@@ -33,9 +34,9 @@ class ChainTest extends TestCase
     /** @test */
     public function should_get_from_superior_layer_when_first_not_available()
     {
-        $this->setAdapters([Mockery::spy(Store::class), 'array']);
+        Cache::store('chain')->adapters([Mockery::spy(Store::class), 'array']);
 
-        Cache::store('array')->put('foo', 'bar');
+        $this->assertTrue(Cache::store('array')->put('foo', 'bar'));
 
         $this->assertEquals('bar', Cache::store('chain')->get('foo'));
     }
@@ -43,7 +44,7 @@ class ChainTest extends TestCase
     /** @test */
     public function should_cache_inferior_layers_on_get_when_superior_exists()
     {
-        $this->setAdapters(['array', 'file']);
+        Cache::store('chain')->adapters(['array', 'file']);
 
         Cache::store('file')->put('foo', 'bar');
 
@@ -56,11 +57,11 @@ class ChainTest extends TestCase
     public function can_flush()
     {
         $adapters = ['file', 'array'];
-        $this->setAdapters($adapters);
+        Cache::store('chain')->adapters($adapters);
 
         Cache::store('chain')->put('foo', 'bar');
         Cache::store('chain')->put('bar', 'foo');
-        Cache::store('chain')->flush();
+        $this->assertTrue(Cache::store('chain')->flush());
 
         Collection::wrap($adapters)->each(fn ($adapter) => tap($this)
             ->assertFalse(Cache::store($adapter)->has('foo'))
@@ -71,11 +72,11 @@ class ChainTest extends TestCase
     public function can_forget()
     {
         $adapters = ['file', 'array'];
-        $this->setAdapters($adapters);
+        Cache::store('chain')->adapters($adapters);
 
         Cache::store('chain')->put('foo', 'bar');
         Cache::store('chain')->put('bar', 'foo');
-        Cache::store('chain')->forget('foo');
+        $this->assertTrue(Cache::store('chain')->forget('foo'));
 
         Collection::wrap($adapters)->each(fn ($adapter) => tap($this)
             ->assertFalse(Cache::store($adapter)->has('foo'))
@@ -86,10 +87,10 @@ class ChainTest extends TestCase
     public function can_increment()
     {
         $adapters = ['file', 'array'];
-        $this->setAdapters($adapters);
+        Cache::store('chain')->adapters($adapters);
 
         Cache::store('chain')->put('number', 1);
-        Cache::store('chain')->increment('number', 2);
+        $this->assertEquals(3, Cache::store('chain')->increment('number', 2));
 
         Collection::wrap($adapters)->each(fn ($adapter) => $this
             ->assertEquals(3, Cache::store($adapter)->get('number')));
@@ -99,13 +100,21 @@ class ChainTest extends TestCase
     public function can_decrement()
     {
         $adapters = ['file', 'array'];
-        $this->setAdapters($adapters);
+        Cache::store('chain')->adapters($adapters);
 
         Cache::store('chain')->put('number', 3);
-        Cache::store('chain')->decrement('number', 2);
+        $this->assertEquals(1, Cache::store('chain')->decrement('number', 2));
 
         Collection::wrap($adapters)->each(fn ($adapter) => $this
             ->assertEquals(1, Cache::store($adapter)->get('number')));
+    }
+
+    /** @test */
+    public function should_throw_exception_with_empty_adapters()
+    {
+        $this->expectException(Exception::class);
+        $this->expectExceptionMessage(Exception::adapters()->getMessage());
+        Cache::store('chain')->adapters([]);
     }
 
     protected function tearDown(): void
@@ -113,10 +122,5 @@ class ChainTest extends TestCase
         Cache::store('file')->flush();
 
         parent::tearDown();
-    }
-
-    private function setAdapters($adapters): void
-    {
-        Config::set('cache.stores.chain.adapters', $adapters);
     }
 }

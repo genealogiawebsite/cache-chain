@@ -9,6 +9,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\InteractsWithTime;
+use LaravelEnso\CacheChain\Exceptions\Chain as Exception;
 
 class Chain extends TaggableStore
 {
@@ -19,7 +20,7 @@ class Chain extends TaggableStore
 
     public function __construct()
     {
-        $this->adapters = $this->adapters();
+        $this->adapters(Config::get('cache.stores.chain.adapters'));
 
         $this->ttl = Config::get('cache.stores.chain.defaultTTL');
     }
@@ -31,32 +32,32 @@ class Chain extends TaggableStore
 
     public function put($key, $value, $seconds)
     {
-        return $this->each('put', ...func_get_args());
+        return $this->every('put', ...func_get_args());
     }
 
     public function increment($key, $value = 1)
     {
-        return $this->each('increment', ...func_get_args());
+        return $this->every('increment', ...func_get_args());
     }
 
     public function decrement($key, $value = 1)
     {
-        return $this->each('decrement', ...func_get_args());
+        return $this->every('decrement', ...func_get_args());
     }
 
     public function forever($key, $value)
     {
-        return $this->each('forever', ...func_get_args());
+        return $this->every('forever', ...func_get_args());
     }
 
     public function forget($key)
     {
-        return $this->each('forget', ...func_get_args());
+        return $this->every('forget', ...func_get_args());
     }
 
     public function flush()
     {
-        return $this->each('flush', ...func_get_args());
+        return $this->every('flush', ...func_get_args());
     }
 
     public function getPrefix()
@@ -64,9 +65,19 @@ class Chain extends TaggableStore
         return '';
     }
 
-    private function each($method, ...$args)
+    public function adapters(array $adapters)
     {
-        return $this->adapters->each->{$method}(...$args);
+        throw_if(empty($adapters), Exception::adapters());
+
+        $this->adapters = Collection::wrap($adapters)
+            ->map(fn ($provider) => $this->store($provider));
+    }
+
+    private function every($method, ...$args)
+    {
+        return $this->adapters
+            ->map(fn ($adapter) => $adapter->{$method}(...$args))
+            ->last();
     }
 
     private function cacheGet($key, int $layer = 0)
@@ -88,14 +99,6 @@ class Chain extends TaggableStore
         }
 
         return $cachedValue;
-    }
-
-    private function adapters(): COllection
-    {
-        $adapters = Config::get('cache.stores.chain.adapters');
-
-        return Collection::wrap($adapters)
-            ->map(fn ($provider) => $this->store($provider));
     }
 
     private function store($provider)
