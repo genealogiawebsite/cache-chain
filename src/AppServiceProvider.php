@@ -10,10 +10,6 @@ class AppServiceProvider extends ServiceProvider
 {
     public function boot()
     {
-        Cache::extend('chain', function ($app) {
-            return Cache::repository(new Chain(
-                config('cache.stores.chain.adapters', []
-            )));
-        });
+        Cache::extend('chain', fn () => Cache::repository(new Chain()));
     }
 }

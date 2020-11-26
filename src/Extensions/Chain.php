@@ -7,23 +7,26 @@ use Illuminate\Cache\TaggableStore;
 use Illuminate\Contracts\Cache\Store;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\InteractsWithTime;
 
 class Chain extends TaggableStore
 {
     use InteractsWithTime, RetrievesMultipleKeys;
 
-    private Collection $chains;
+    private Collection $adapters;
+    private ?int $ttl;
 
-    public function __construct($chains = [])
+    public function __construct()
     {
-        $this->chains = (new Collection($chains))
-            ->map(fn ($provider) => $provider instanceof Store ? $provider : Cache::store($provider));
+        $this->adapters = $this->adapters();
+
+        $this->ttl = Config::get('cache.stores.chain.defaultTTL');
     }
 
     public function get($key)
     {
-        return $this->getAndPut($key);
+        return $this->cacheGet($key);
     }
 
     public function put($key, $value, $seconds)
@@ -63,25 +66,42 @@ class Chain extends TaggableStore
 
     private function each($method, ...$args)
     {
-        return $this->chains->each->$method(...$args);
+        return $this->adapters->each->{$method}(...$args);
     }
 
-    private function getAndPut($key, $index = 0)
+    private function cacheGet($key, int $layer = 0)
     {
-        if ($index >= $this->chains->count()) {
-            return null;
+        if ($layer >= $this->adapters->count()) {
+            return;
         }
 
-        if ($result = $this->chains->get($index)->get($key)) {
-            return $result;
+        if ($cachedValue = $this->adapters->get($layer)->get($key)) {
+            return $cachedValue;
         }
 
-        if ($result = $this->getAndPut($key, $index + 1)) {
-            config('cache.stores.chain.defaultTTL') !== null
-                ? $this->chains->get($index)->put($key, $result, config('cache.stores.chain.defaultTTL'))
-                : $this->chains->get($index)->forever($key, $result);
+        if ($cachedValue = $this->cacheGet($key, $layer + 1)) {
+            if ($this->ttl > 0) {
+                $this->adapters->get($layer)->put($key, $cachedValue, $this->ttl);
+            } else {
+                $this->adapters->get($layer)->forever($key, $cachedValue);
+            }
         }
 
-        return $result;
+        return $cachedValue;
+    }
+
+    private function adapters(): COllection
+    {
+        $adapters = Config::get('cache.stores.chain.adapters');
+
+        return Collection::wrap($adapters)
+            ->map(fn ($provider) => $this->store($provider));
+    }
+
+    private function store($provider)
+    {
+        return $provider instanceof Store
+            ? $provider
+            : Cache::store($provider);
     }
 }
