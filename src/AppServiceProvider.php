@@ -8,8 +8,10 @@ use LaravelEnso\CacheChain\Extensions\Chain;
 
 class AppServiceProvider extends ServiceProvider
 {
-    public function boot()
+    public function register()
     {
-        Cache::extend('chain', fn () => Cache::repository(new Chain()));
+        $this->app->booting(fn () => Cache::extend(
+            'chain', fn () => Cache::repository(new Chain())
+        ));
     }
 }
