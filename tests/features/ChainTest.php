@@ -3,9 +3,8 @@
 use Illuminate\Contracts\Cache\Store;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Config;
-use Tests\TestCase;
 use LaravelEnso\CacheChain\Exceptions\Chain as Exception;
+use Tests\TestCase;
 
 class ChainTest extends TestCase
 {
@@ -51,6 +50,17 @@ class ChainTest extends TestCase
         $this->assertNull(Cache::store('array')->get('foo'));
         $this->assertEquals('bar', Cache::store('chain')->get('foo'));
         $this->assertEquals('bar', Cache::store('array')->get('foo'));
+    }
+
+    /** @test */
+    public function should_sync_inferior_layers_when_superior_exists()
+    {
+        Cache::store('chain')->adapters(['array', 'file']);
+
+        Cache::store('file')->put('foo', 5);
+
+        $this->assertEquals(6, Cache::store('chain')->increment('foo'));
+        $this->assertEquals(6, Cache::store('array')->get('foo'));
     }
 
     /** @test */

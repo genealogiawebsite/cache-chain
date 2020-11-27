@@ -32,32 +32,38 @@ class Chain extends TaggableStore
 
     public function put($key, $value, $seconds)
     {
-        return $this->every('put', ...func_get_args());
+        return $this->handle('put', ...func_get_args());
     }
 
     public function increment($key, $value = 1)
     {
-        return $this->every('increment', ...func_get_args());
+        $current = $this->cacheGet($key);
+        $new = $current + $value;
+
+        return $this->handleWithSync('increment', $key, $value, $new);
     }
 
     public function decrement($key, $value = 1)
     {
-        return $this->every('decrement', ...func_get_args());
+        $current = $this->cacheGet($key);
+        $new = $current - $value;
+
+        return $this->handleWithSync('decrement', $key, $value, $new);
     }
 
     public function forever($key, $value)
     {
-        return $this->every('forever', ...func_get_args());
+        return $this->handle('forever', ...func_get_args());
     }
 
     public function forget($key)
     {
-        return $this->every('forget', ...func_get_args());
+        return $this->handle('forget', ...func_get_args());
     }
 
     public function flush()
     {
-        return $this->every('flush', ...func_get_args());
+        return $this->handle('flush', ...func_get_args());
     }
 
     public function getPrefix()
@@ -73,7 +79,16 @@ class Chain extends TaggableStore
             ->map(fn ($provider) => $this->store($provider));
     }
 
-    private function every($method, ...$args)
+    private function handleWithSync($method, $key, $value, $new)
+    {
+        return $this->adapters
+            ->map(fn ($adapter) => $adapter->has($key)
+                ? $adapter->{$method}($key, $value)
+                : $adapter->{$method}($key, $new))
+            ->last();
+    }
+
+    private function handle($method, ...$args)
     {
         return $this->adapters
             ->map(fn ($adapter) => $adapter->{$method}(...$args))
