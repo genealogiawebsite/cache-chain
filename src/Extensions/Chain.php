@@ -4,23 +4,24 @@ namespace LaravelEnso\CacheChain\Extensions;
 
 use Illuminate\Cache\RetrievesMultipleKeys;
 use Illuminate\Cache\TaggableStore;
-use Illuminate\Contracts\Cache\Store;
+use Illuminate\Contracts\Cache\LockProvider;
+use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\InteractsWithTime;
 use LaravelEnso\CacheChain\Exceptions\Chain as Exception;
 
-class Chain extends TaggableStore
+class Chain extends TaggableStore implements LockProvider
 {
     use InteractsWithTime, RetrievesMultipleKeys;
 
-    private Collection $adapters;
+    private Collection $providers;
     private ?int $ttl;
 
     public function __construct()
     {
-        $this->adapters(Config::get('cache.stores.chain.adapters'));
+        $this->providers(Config::get('cache.stores.chain.providers'));
 
         $this->ttl = Config::get('cache.stores.chain.defaultTTL');
     }
@@ -71,45 +72,57 @@ class Chain extends TaggableStore
         return '';
     }
 
-    public function adapters(array $adapters)
+    public function providers(array $providers)
     {
-        throw_if(empty($adapters), Exception::adapters());
+        throw_if(empty($providers), Exception::providers());
 
-        $this->adapters = Collection::wrap($adapters)
+        $this->providers = Collection::wrap($providers)
             ->map(fn ($provider) => $this->store($provider));
+    }
+
+    public function restoreLock($name, $owner)
+    {
+        return $this->lockProvider()->restoreLock($name, $owner);
+    }
+
+    public function lock($name, $seconds = 0, $owner = null)
+    {
+        return $this->lockProvider()->lock($name, $seconds, $owner);
     }
 
     private function handleWithSync($method, $key, $value, $new)
     {
-        return $this->adapters
-            ->map(fn ($adapter) => $adapter->has($key)
-                ? $adapter->{$method}($key, $value)
-                : $adapter->{$method}($key, $new))
+        return $this->providers
+            ->map(fn ($provider) => $provider->has($key)
+                ? $provider->{$method}($key, $value)
+                : $provider->{$method}($key, $new))
             ->last();
     }
 
     private function handle($method, ...$args)
     {
-        return $this->adapters
-            ->map(fn ($adapter) => $adapter->{$method}(...$args))
+        return $this->providers
+            ->map(fn ($provider) => $provider->{$method}(...$args))
             ->last();
     }
 
     private function cacheGet($key, int $layer = 0)
     {
-        if ($layer >= $this->adapters->count()) {
-            return;
+        if ($layer >= $this->providers->count()) {
+            return null;
         }
 
-        if ($cachedValue = $this->adapters->get($layer)->get($key)) {
+        $cachedValue = $this->providers->get($layer)->get($key);
+
+        if ($cachedValue !== null) {
             return $cachedValue;
         }
 
         if ($cachedValue = $this->cacheGet($key, $layer + 1)) {
             if ($this->ttl > 0) {
-                $this->adapters->get($layer)->put($key, $cachedValue, $this->ttl);
+                $this->providers->get($layer)->put($key, $cachedValue, $this->ttl);
             } else {
-                $this->adapters->get($layer)->forever($key, $cachedValue);
+                $this->providers->get($layer)->forever($key, $cachedValue);
             }
         }
 
@@ -118,8 +131,18 @@ class Chain extends TaggableStore
 
     private function store($provider)
     {
-        return $provider instanceof Store
+        return $provider instanceof Repository
             ? $provider
             : Cache::store($provider);
+    }
+
+    private function lockProvider(): Repository
+    {
+        return $this->providers
+            ->reverse()
+            ->filter(fn ($provider) => $provider->getStore() instanceof LockProvider)
+            ->whenEmpty(function () {
+                throw Exception::lockProvider();
+            })->first();
     }
 }
